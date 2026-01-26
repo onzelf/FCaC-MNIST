@@ -60,7 +60,9 @@ Key directories and their purpose:
 ```
 infra-tofu
 └── Terraform configuration file (HCL)
+
 vfp-core
+
 vfp-governance/verifier/state/
 ├── Runtime state mounted into verifier-app
 └── (policy, binds, envelopes, etc.)
@@ -95,8 +97,8 @@ Before you begin, ensure you have:
 From repo root:
 
 ```bash
-tofu init -auto-approve
-tofu apply -aiti-approve
+tofu init --auto-approve
+tofu apply --auto-approve
 ```
 
 This starts the docker network and containers (nginx proxy, verifier-app, redis, hub, flower components).

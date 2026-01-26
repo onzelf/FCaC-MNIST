@@ -1,0 +1,99 @@
+<!-- frontend/static/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FCaC Governed Prediction</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .digit-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .digit-btn {
+            padding: 20px;
+            font-size: 24px;
+            border: 2px solid #4CAF50;
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .digit-btn:hover { background: #4CAF50; color: white; }
+        .result { margin-top: 20px; padding: 15px; border-radius: 4px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FCaC Governed Prediction(2)</h1>
+        <p>Authenticated as: <strong id="clientId">Loading...</strong></p>
+        
+        <p>Select digit for prediction:</p>
+        <div class="digit-grid">
+            <button class="digit-btn" onclick="predict(0)">0</button>
+            <button class="digit-btn" onclick="predict(1)">1</button>
+            <button class="digit-btn" onclick="predict(2)">2</button>
+            <button class="digit-btn" onclick="predict(3)">3</button>
+            <button class="digit-btn" onclick="predict(4)">4</button>
+            <button class="digit-btn" onclick="predict(5)">5</button>
+            <button class="digit-btn" onclick="predict(6)">6</button>
+            <button class="digit-btn" onclick="predict(7)">7</button>
+            <button class="digit-btn" onclick="predict(8)">8</button>
+            <button class="digit-btn" onclick="predict(9)">9</button>
+        </div>
+        
+        <div id="result" class="result"></div>
+    </div>
+    
+    <script>
+        // Client identity is determined by backend authentication
+        async function predict(digit) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = 'result';
+            resultDiv.innerHTML = `Requesting prediction for digit ${digit}...`;
+            
+            try {
+                const response = await fetch(`/api/predict/${digit}`);
+                const data = await response.json();
+                
+                // Check for error or denied status
+                if (data.error || data.status === "denied") {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <strong>✗ Prediction Denied</strong><br>
+                        ${data.error || 'Access not authorized'}
+                    `;
+                } else if (data.authorized) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <strong>✓ Prediction Authorized</strong><br>
+                        Client: ${data.client}<br>
+                        Digit: ${data.digit}<br>
+                        Envelope: ${data.envelope_id}
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `<strong>Unexpected response</strong>`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+            }
+        }  
+    </script>
+</body>
+</html>

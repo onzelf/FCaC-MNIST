@@ -53,9 +53,10 @@ subscribe("fcac:envelopes:created")
 When it receives the event, it decides **what operational workflows are implied by this envelope**.
 
 In the PoC, the rule is simple and explicit:
--   If `scope.backend == "flower_server"`, then bind the Flower server.
-    
-This decision is **procedural**, local to the Hub, and _not_ a governance decision.
+```python 
+if scope.backend == "flower_server", then bind the Flower server
+```    
+This decision is **procedural**, local to the Hub, and **not** a governance decision.
 
 ----------
 
@@ -70,8 +71,7 @@ The Hub calls the Flower server control plane:
   "scope": {...}
 }```
 ```
-This is **not authorization**.  
-It is **context injection**.
+Thus instead of **authorization** we get **context injection**:
 
 The Flower server:
 -   records the envelope_id
@@ -101,7 +101,7 @@ So training starts **because**:
 
 There is **no runtime authorization check** in the server.
 
-This is the **correct FCaC architecture**.
+This is the **correct FCaC architecture vision**.
 
 ----------
 
@@ -156,7 +156,7 @@ FCaC does not prescribe operational behavior. It establishes the conditions unde
 In the proof-of-concept, Flower clients are modeled as short-lived participants rather than persistent services. Each client joins a federated execution, participates for the agreed number of rounds, and then exits. This reflects realistic cross-silo settings in which organizations explicitly opt into each governed execution. As a result, running a new envelope requires restarting the client containers, ensuring fresh consent and preventing state leakage across envelopes.
 ----------
 
-## Why this is  a strong design
+## Conclusion
 
 This pattern is powerful because it scales:
 

@@ -1,6 +1,4 @@
-﻿
-
-# 🔐 Federated Computing as Code (FCaC)
+﻿ # 🔐 Federated Computing as Code (FCaC)
 ## PoC — Proof-Carrying Admission + Envelope-Bound Operations
 
 
@@ -51,6 +49,8 @@ This repository contains a working **Proof-of-Concept (PoC)** for **Federated Co
 └─────────────────────────────────────────────────────────────┘
 ```
 
+![enter image description here](FCAC_v6.png)
+
 ---
 
 ## 📁 Repo Layout
@@ -90,22 +90,50 @@ Before you begin, ensure you have:
 - ✅ **Docker Engine** installed
 - ✅ **OpenTofu** (or Terraform) installed
 - ✅ **Python 3** (for helper scripts used by Test #2)
-- ✅ Your local machine can resolve `verifier.local` (recommended)
+- ✅ Your local machine shall resolve `verifier.local` in `/etc/hosts`
+
+
+### Generating cerificates
+
+```bash
+cd tests
+./make_certs.sh
+```
+The following pairs will be generated:  
+```
+vfp-governance/verifier/certs/ca.crt (ca.key)
+vfp-governance/verifier/certs/hub.crt (hub.jey)
+vfp-governance/verifier/certs/HospitalA-admin.crt (HospitalA-admin.key)
+vfp-governance/verifier/certs/HospitalB-admin.crt (HospitalB-admin.key)
+vfp-governance/verifier/certs/verifier.crt  (verifier.key)
+```
 
 ### Build + Provision
 
 From repo root:
 
 ```bash
-tofu init --auto-approve
-tofu apply --auto-approve
+cd infra/tofu
+tofu init
+tofu apply -auto-approve
 ```
 
 This starts the docker network and containers (nginx proxy, verifier-app, redis, hub, flower components).
 
+
+ |  IMAGE |                      COMMAND |                   PORTS |                                NAMES |
+ |-----------------|--------------|--------------|-------------|
+ |    fcac/flower-client:local  |  "python client.py"    |  |                                        flower-client-even |
+|    fcac/frontend:local     |    "uvicorn app:app --h…"  |   127.0.0.1:8082->80/tcp   |            fcac-frontend-even |
+|    fcac/flower-client:local  |  "python client.py"      |       |                                 flower-client-odd |
+|    fcac/flower-server:local  |  "python server.py"     |   127.0.0.1:8081->8081/tcp    |          flower-server|
+|    fcac/hub:local           |   "python -m uvicorn h…"  |  127.0.0.1:8080->8080/tcp  |            fc-hub|
+|    fcac/verifier-proxy:local  | "/docker-entrypoint.…"  |  80/tcp, 192.168.1.25:8443->8443/tcp  | verifier-proxy |
+|    fcac/verifier-app:local   |  "uvicorn app:app --h…"  |  127.0.0.1:9000->9000/tcp   |           verifier-app |
+|    redis:7-alpine          |    "docker-entrypoint.s…"  |  6379/tcp    |                          redis |
 ---
 
-## 🔐 Critical TLS/mTLS Notes (Do Not Skip)
+## 🔐 Critical TLS/mTLS Notes
 
 ### 1️⃣ Hostname vs IP
 
@@ -118,7 +146,7 @@ https://verifier.local:8443
 
 > ⚠️ If you use an IP URL on a strict client, you may see "site can't be reached" due to hostname mismatch.
 
-### 2️⃣ "curl -k" is not a real test
+### 2️⃣ "curl -k"  limitations
 
 Using `-k` disables server validation. It is acceptable for quick debugging but not for validating the trust chain.
 
@@ -138,11 +166,16 @@ Some endpoints are public (`/attest`, optionally `/health`). Sensitive endpoints
 
 ## 🧪 Test #1 — Envelope creation (KYO) + operational trigger (Flower training)
 
-**Outcome**: You create an ACTIVE envelope and the system triggers a Flower training run bound to that envelope, producing evidence (metrics) under the vault. The intuition behind the envelope creation is to certify admission control to the system similar to what happen when passing the control at the border to entry a Country. 
+>**Objective**: Envelope issuance triggers real, auditable execution (KYO → training → evidence).
+
+Flower training starts **because envelope creation emits a constitutional event**, not because a training request is authorized. When an envelope transitions to `ACTIVE`, the verifier publishes an _envelope-created event_ on a shared event bus. The Hub subscribes to this event and binds the Flower server to the envelope context. The Flower server, once bound, starts training automatically. No authorization logic exists inside the Flower server; admission and authorization are completed **before** the workflow starts.
+
+> **Why training starts automatically after envelope creation.**  
+In FCaC, an envelope is not a permission but a constitutional execution context. When an envelope becomes ACTIVE, the verifier emits a single envelope-created event that signals the existence of a new, governance-approved context. The Hub subscribes to this event and binds the relevant Core services to the envelope. In the PoC, this binding unblocks the Flower server, which starts federated training automatically. No authorization logic exists inside the training service itself: all governance decisions are completed prior to execution. This separation ensures that operational services remain purely procedural, while sovereignty constraints are enforced exclusively at the boundary.
 
 ### Step 1: Start verification session (KYO)
 
-The admin initiates `/verify-start` and receives a 6-digit code.
+The two admins initiates `/verify-start` and receives a 6-digit code.
 
 **Typical call (admin client cert):**
 
@@ -155,6 +188,7 @@ curl -s \
 ```
 
 This returns an HTML page containing the 6-digit verification code.
+
 
 ### Step 2: Claim session (Hub)
 
@@ -169,6 +203,7 @@ The envelope creation script (`Test_createEnvelope_v3.sh`) automates the full fl
 **Run:**
 
 ```bash
+cd tests
 bash Test_createEnvelope_v3.sh
 ```
 
@@ -336,6 +371,10 @@ Apache 2.0
 **Built by S*elf for demonstrating Federated Computing as Code**
 
 </div>
+
+
+
+ 
 
 
 

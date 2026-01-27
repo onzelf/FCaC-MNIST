@@ -25,7 +25,7 @@ echo "Envelope ID: $ENVELOPE_ID"
 hr
 bold "Step 1: Verify Hub received envelope"
 sleep 2
-if docker logs fc-hub 2>&1 | grep -q "$ENVELOPE_ID"; then
+if docker logs fc-hub 2>&1 | grep -q "Envelope.*$ENVELOPE_ID"; then
   pass "Hub received envelope event"
   docker logs fc-hub 2>&1 | grep "$ENVELOPE_ID" | tail -3
 else
@@ -34,7 +34,7 @@ fi
 
 hr
 bold "Step 2: Verify Hub bound flower_server"
-if docker logs fc-hub 2>&1 | grep -q "Successfully bound flower_server"; then
+if docker logs fc-hub 2>&1 | grep -q "Successfully bound flower_server.*$ENVELOPE_ID"; then
   pass "Hub successfully bound backend"
 else
   fail "Hub did not bind backend"
@@ -42,24 +42,17 @@ fi
 
 hr
 bold "Step 3: Verify flower_server bound to envelope"
-if docker logs flower-server 2>&1 | grep -q "Binding to.*$ENVELOPE_ID"; then
+if docker logs flower-server 2>&1 | grep -q "Envelope bound.*$ENVELOPE_ID"; then
   pass "flower_server received binding"
   docker logs flower-server 2>&1 | grep "$ENVELOPE_ID" | tail -5
 else
   fail "flower_server did not bind"
 fi
 
-hr
-bold "Step 4: Check authorization (start, train)"
-if docker logs flower-server 2>&1 | grep -q "Authorization.*PERMIT"; then
-  pass "Operations authorized"
-  docker logs flower-server 2>&1 | grep "Authorization" | tail -3
-else
-  fail "Authorization failed"
-fi
+ 
 
 hr
-bold "Step 5: Verify Flower server started"
+bold "Step 4: Verify Flower server started"
 if docker logs flower-server 2>&1 | grep -qE "Starting Flower"; then
   pass "Flower gRPC server started"
 else
@@ -67,7 +60,7 @@ else
 fi
 
 hr
-bold "Step 6: Monitor client connections (30s)"
+bold "Step 5: Monitor client connections (30s)"
 echo "Watching for client connections..."
 timeout 30 bash -c '
   while true; do
@@ -92,7 +85,7 @@ else
 fi
 
 hr
-bold "Step 7: Check training completion"
+bold "Step 6: Check training completion"
 sleep 5
 if docker logs flower-server 2>&1 | grep -qE "Training completed"; then
   pass "Training completed successfully"
@@ -102,7 +95,7 @@ else
 fi
 
 hr
-bold "Step 8: Test prediction endpoints"
+bold "Step 7: Test prediction endpoints"
 echo "Testing flower-server /predict endpoint..."
 
 exit 1

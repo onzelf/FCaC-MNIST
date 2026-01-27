@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Where to write certs (relative to repo root)
-CERT_DIR="$(cd "$(dirname "$0")/.."; pwd)/verifier/certs"
+CERT_DIR="$(cd "$(dirname "$0")/.."; pwd)/vfp-governance/verifier/certs"
 mkdir -p "$CERT_DIR"
 cd "$CERT_DIR"
 
@@ -12,7 +12,7 @@ rm -v -f *.key *.crt *.csr *.p12 *.srl 2>/dev/null || true
 # --------------------------------------------
 # Parameters
 # --------------------------------------------
-P12_PASS="<set password>"                             
+P12_PASS="fcac_pass"                             
 DAYS_CA=3650
 DAYS_LEAF=825
 
@@ -40,41 +40,41 @@ openssl x509 -req -in hub.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -
 rm -f hub.csr
 
 echo "[make_certs] generating orgA admin client cert: $CN_ORG_A"
-openssl genrsa -out orgA-admin.key 2048
-openssl req -new -key orgA-admin.key -subj "/CN=${CN_ORG_A}" -out orgA-admin.csr
-openssl x509 -req -in orgA-admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days "$DAYS_LEAF" -out orgA-admin.crt
-rm -f orgA-admin.csr
+openssl genrsa -out HospitalA-admin.key 2048
+openssl req -new -key HospitalA-admin.key -subj "/CN=${CN_ORG_A}" -out HospitalA-admin.csr
+openssl x509 -req -in HospitalA-admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days "$DAYS_LEAF" -out HospitalA-admin.crt
+rm -f HospitalA-admin.csr
 
 echo "[make_certs] generating orgB admin client cert: $CN_ORG_B"
-openssl genrsa -out orgB-admin.key 2048
-openssl req -new -key orgB-admin.key -subj "/CN=${CN_ORG_B}" -out orgB-admin.csr
-openssl x509 -req -in orgB-admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days "$DAYS_LEAF" -out orgB-admin.crt
-rm -f orgB-admin.csr
+openssl genrsa -out HospitalB-admin.key 2048
+openssl req -new -key HospitalB-admin.key -subj "/CN=${CN_ORG_B}" -out HospitalB-admin.csr
+openssl x509 -req -in HospitalB-admin.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days "$DAYS_LEAF" -out HospitalB-admin.crt
+rm -f HospitalB-admin.csr
 
 # ---- Android-friendly PKCS#12 for admins (password = <password>) ----
 # Use the exact PBE/MAC combo that worked for you.
 echo "[make_certs] exporting admin PKCS#12 bundles (password = ${P12_PASS})"
 openssl pkcs12 -export \
-  -inkey orgA-admin.key -in orgA-admin.crt \
+  -inkey HospitalA-admin.key -in HospitalA-admin.crt \
   -certfile ca.crt  \
   -name "HospitalA Admin" \
   -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
-  -out orgA-admin.p12 \
+  -out HospitalA-admin.p12 \
   -passout pass:${P12_PASS}
 
 openssl pkcs12 -export \
-  -inkey orgB-admin.key -in orgB-admin.crt \
+  -inkey HospitalB-admin.key -in HospitalB-admin.crt \
   -certfile ca.crt \
   -name "HospitalB Admin" \
   -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
-  -out orgB-admin.p12 \
+  -out HospitalB-admin.p12 \
   -passout pass:${P12_PASS}
 
 # Quick sanity (won't print secrets; just integrity)
 echo " "
 echo "[make_certs] verifying PKCS#12 integrity"
-openssl pkcs12 -info -in orgA-admin.p12 -noout -passin pass:${P12_PASS} >/dev/null
-openssl pkcs12 -info -in orgB-admin.p12 -noout -passin pass:${P12_PASS} >/dev/null
+openssl pkcs12 -info -in HospitalA-admin.p12 -noout -passin pass:${P12_PASS} >/dev/null
+openssl pkcs12 -info -in HospitalB-admin.p12 -noout -passin pass:${P12_PASS} >/dev/null
 
 echo "[make_certs] done."
-ls -lh ca.crt verifier.crt hub.crt orgA-admin.p12 orgB-admin.p12
+ls -lh ca.crt verifier.crt hub.crt HospitalA-admin.crt HospitalB-admin.crt

@@ -131,9 +131,9 @@ tofu apply -auto-approve
 This starts the docker network and containers (nginx proxy, verifier-app, redis, hub, flower components).
 
 
- |  IMAGE |                                         PORTS |                                NAMES |
- |-----------------|--------------|--------------|-------------|
- |    fcac/flower-client:local  |     |                                        flower-client-even |
+|  IMAGE |  PORTS |       NAMES |
+|--------|--------|-------------|
+|    fcac/flower-client:local  |     |                                        flower-client-even |
 |    fcac/frontend:local     |        127.0.0.1:8082->80/tcp   |            fcac-frontend |
 |    fcac/flower-client:local  |         |                                 flower-client-odd |
 |    fcac/flower-server:local  |          |          flower-server|

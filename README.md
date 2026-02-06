@@ -1,4 +1,4 @@
-﻿ # 🔐 Federated Computing as Code (FCaC)
+# 🔐 Federated Computing as Code (FCaC)
 ## PoC — Proof-Carrying Admission + Envelope-Bound Operations
 
 
@@ -20,7 +20,17 @@ This repository contains a working **Proof-of-Concept (PoC)** for **Federated Co
 > ⚠️ **Disclaimer**: This PoC is designed to be demonstrative, not production-grade. The objective is to show the FCaC trust chain and the boundary guarantees using existing cryptographic standards and minimal moving parts.
 
 ---
+## 📝 Quickstart Checklist
 
+1. ✅ `tofu apply`
+2. ✅ `bash Test_createEnvelope.sh` → obtain `envelope_id`
+3. ✅   Verify evidence under `verifier/vault/<envelope_id>/...`
+4. ✅ `bash run_probe_eddsa.sh` → ALLOW/DENY admission checks
+5. ✅   For a new training run:
+   - Create new envelope again
+   - Restart flower-server + clients if needed
+   
+   ----
 ## 🏗️ Architecture (PoC view)
 
 ### Key Components
@@ -90,7 +100,7 @@ Before you begin, ensure you have:
 - ✅ **Docker Engine** installed
 - ✅ **OpenTofu** (or Terraform) installed
 - ✅ **Python 3** (for helper scripts used by Test #2)
-- ✅ Your local machine shall resolve `verifier.local` in `/etc/hosts`
+- ✅ Your **local machine** shall resolve `verifier.local` in `/etc/hosts`	
 
 
 ### Generating cerificates
@@ -121,209 +131,70 @@ tofu apply -auto-approve
 This starts the docker network and containers (nginx proxy, verifier-app, redis, hub, flower components).
 
 
- |  IMAGE |                      COMMAND |                   PORTS |                                NAMES |
+ |  IMAGE |                                         PORTS |                                NAMES |
  |-----------------|--------------|--------------|-------------|
- |    fcac/flower-client:local  |  "python client.py"    |  |                                        flower-client-even |
-|    fcac/frontend:local     |    "uvicorn app:app --h…"  |   127.0.0.1:8082->80/tcp   |            fcac-frontend-even |
-|    fcac/flower-client:local  |  "python client.py"      |       |                                 flower-client-odd |
-|    fcac/flower-server:local  |  "python server.py"     |   127.0.0.1:8081->8081/tcp    |          flower-server|
-|    fcac/hub:local           |   "python -m uvicorn h…"  |  127.0.0.1:8080->8080/tcp  |            fc-hub|
-|    fcac/verifier-proxy:local  | "/docker-entrypoint.…"  |  80/tcp, 192.168.1.25:8443->8443/tcp  | verifier-proxy |
-|    fcac/verifier-app:local   |  "uvicorn app:app --h…"  |  127.0.0.1:9000->9000/tcp   |           verifier-app |
-|    redis:7-alpine          |    "docker-entrypoint.s…"  |  6379/tcp    |                          redis |
----
+ |    fcac/flower-client:local  |     |                                        flower-client-even |
+|    fcac/frontend:local     |        127.0.0.1:8082->80/tcp   |            fcac-frontend |
+|    fcac/flower-client:local  |         |                                 flower-client-odd |
+|    fcac/flower-server:local  |          |          flower-server|
+|    fcac/hub:local           |      127.0.0.1:8080->8080/tcp  |            fc-hub|
+|    fcac/verifier-proxy:local  |    80/tcp, verifier.local:8443->8443/tcp  | verifier-proxy |
+|    fcac/verifier-app:local   |    127.0.0.1:9000->9000/tcp   |           verifier-app |
+|    redis:7-alpine          |       6379/tcp    |                          redis |
+|fcac/issuer:local | 8080/tcp | issuer-hospitala |
+|fcac/issuer:local | 8080/tcp | issuer-hospitalb |
+--- 
+## Unitary Tests
 
-## 🔐 Critical TLS/mTLS Notes
+### 🧪 Test #1 — Envelope creation (KYO) + operational trigger (Flower training) [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/FCaC_Test_1.md)
 
-### 1️⃣ Hostname vs IP
+### 🧪 Test #2 — Stateless Admission with ECT + DPoP [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/FCaC_Test_2.md)
 
-Your server certificate is issued to `verifier.local` (CN/SAN). Browser-grade clients may reject IP URLs.
-
-**Recommended base URL:**
-```
-https://verifier.local:8443
-```
-
-> ⚠️ If you use an IP URL on a strict client, you may see "site can't be reached" due to hostname mismatch.
-
-### 2️⃣ "curl -k"  limitations
-
-Using `-k` disables server validation. It is acceptable for quick debugging but not for validating the trust chain.
-
-**Prefer:**
-```bash
-curl --cacert <CA> --cert <CLIENT_CRT> --key <CLIENT_KEY> https://verifier.local:8443/...
-```
-
-### 3️⃣ mTLS enforcement is endpoint-specific
-
-Some endpoints are public (`/attest`, optionally `/health`). Sensitive endpoints require mTLS CN allowlists:
-
-- `/verify-start` expects **admin CN**
-- `/admission/check` expects **hub CN**
-
----
-
-## 🧪 Test #1 — Envelope creation (KYO) + operational trigger (Flower training)
-
->**Objective**: Envelope issuance triggers real, auditable execution (KYO → training → evidence).
-
-Flower training starts **because envelope creation emits a constitutional event**, not because a training request is authorized. When an envelope transitions to `ACTIVE`, the verifier publishes an _envelope-created event_ on a shared event bus. The Hub subscribes to this event and binds the Flower server to the envelope context. The Flower server, once bound, starts training automatically. No authorization logic exists inside the Flower server; admission and authorization are completed **before** the workflow starts.
-
-> **Why training starts automatically after envelope creation.**  
-In FCaC, an envelope is not a permission but a constitutional execution context. When an envelope becomes ACTIVE, the verifier emits a single envelope-created event that signals the existence of a new, governance-approved context. The Hub subscribes to this event and binds the relevant Core services to the envelope. In the PoC, this binding unblocks the Flower server, which starts federated training automatically. No authorization logic exists inside the training service itself: all governance decisions are completed prior to execution. This separation ensures that operational services remain purely procedural, while sovereignty constraints are enforced exclusively at the boundary.
-
-### Step 1: Start verification session (KYO)
-
-The two admins initiates `/verify-start` and receives a 6-digit code.
-
-**Typical call (admin client cert):**
-
-```bash
-curl -s \
-  --cacert vfp-governance/verifier/certs/ca.crt \
-  --cert   vfp-governance/verifier/vault/HospitalA-admin.crt \
-  --key    vfp-governance/verifier/vault/HospitalA-admin.key \
-  https://verifier.local:8443/verify-start
-```
-
-This returns an HTML page containing the 6-digit verification code.
+### 🧪  Test #3 — MNIST “clinical imaging” prediction with FCaC admission [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/FCaC_Test_3.md)
 
 
-### Step 2: Claim session (Hub)
+## E2E   — UI demonstrator (Admin mint → User governed predict)
 
-Hub claims the code and obtains a session handle.
+E2E adds a minimal web UI that drives the same governed execution path as the CLI tests, but with a reviewer-friendly workflow.
 
-The envelope creation script (`Test_createEnvelope_v3.sh`) automates the full flow:
-- `/beta/bind/init`
-- `/verify-start` (admin KYO)
-- `/session/claim` (hub)
-- `/beta/bind/approve` (hub)
+**Admin step (mint).**  
+An organization-specific **issuer container** (e.g., `issuer-hospitala` / `issuer-hospitalb`) mints an ECT for a selected member and cohort. The issuer holds the organization’s admin credentials and is the only component that calls verifier `/mint_ect`.
 
-**Run:**
+**User step (execute).**  
+The UI submits `{who, envelope_id, cohort, digit}` to the boundary endpoint. The **Hub** calls `/admission/check` with presented **ECT + DPoP + nonce**, and **only on allow** forwards internally to `flower-server:/predict_image`. The model output is cohort-scoped (procedural check + logits masking).
 
-```bash
-cd tests
-bash Test_createEnvelope_v3.sh
-```
+**What this proves.**
+-   **Separation of duties:** Hub does not mint; minting authority is org-scoped at issuers.
+-   **Constitutional enforcement before execution:** `/admission/check` gates the service call.
+-   **Cryptographic integrity:** tampered ECT or wrong cohort yields denial (`Signature verification failed` / `capability_violation`).
+-   **No bypass:** `flower-server` is internal-only; external callers must go through the boundary.
+    
 
-**Expected output includes:**
-```
-✓ Envelope created: <envelope_id>
-```
-
-verifier-app publishes a Redis event on `fcac:envelopes:created`
-
-### Step 3: Confirm training evidence exists
-
-Training evidence is written by the Flower server side under the vault path for that envelope.
-
-**Check:**
-```
-vfp-governance/verifier/vault/<envelope_id>/run.json
-```
-
-### 🔄 Operational workflow: rerun training for a new envelope
-
-Each envelope is treated as a bounded execution context. If you create a new envelope and want a new run, a minimal PoC reset is:
-
-```bash
-docker restart flower-server
-docker restart flower-client-even flower-client-odd
-```
-
-> 💡 **Why this is needed**: The flower-server control plane can refuse rebinding with 409 Conflict if it still considers itself bound to a previous envelope. Restarting the server resets that in-memory binding latch.
-
-### 🛠️ Debugging without curl/jq inside slim images
-
-Some containers do not have curl/jq. Use a container that does (e.g., hub) to query internal services:
-
-```bash
-docker exec -it fc-hub sh -lc 'curl -s http://flower-server:8081/status | python -m json.tool'
-```
+**Out of scope.**
+-   production-grade member IAM lifecycle (enrollment/revocation), strong end-user auth
+-   hardened wallet/key storage (attestation, secure enclaves for holder keys)
+-   prompt→request compilation (LLM UX) and safe projection to constitutional tuples
+-   production hardening (rate limits, monitoring, multi-tenant isolation)
 
 ---
+## Important Security note
 
-## 🧪 Test #2 — Trust chain admission: ECT + DPoP (/admission/check)
-
-**Outcome**: The system admits/denies an operation based on:
-- ✅ a valid **Envelope Capability Token (ECT)** (JWT / JWS)
-- ✅ a request-bound **DPoP proof** (JWT)
-- ✅ **capability tuple match** (compiled at mint time, checked at admission time)
-
-### Overview
-
-1. Generate a member keypair (holder keys)
-2. Mint an ECT bound to the holder (via `cnf.jkt`)
-3. Generate DPoP for a specific method+URL (`htm`, `htu`) and nonce/jti
-4. Call `/admission/check` with headers:
-   - `Authorization: ECT <token>`
-   - `DPoP: <dpop-jwt>`
-   - `X-DPoP-Nonce: <nonce>`
-
-### Run the trust chain script
-
-```bash
-bash run_probe_eddsa.sh
-```
-
-The script uses helper utilities:
-- `gen_member_keys.py` (generates holder keys)
-- `make_dpop_jwt_eddsa.py` (generates canonical DPoP JWT)
-
-### ⚠️ HTU canonicalization note (important)
-
-In this PoC, nginx forwards Host as `verifier.local` (without port). Therefore, the verifier may reconstruct `REQ_HTU` without an explicit port:
-
-**DPoP HTU used by client:**
-```
-https://verifier.local:8443/admission/check
-```
-
-**Verifier reconstructed HTU:**
-```
-https://verifier.local/admission/check
-```
-
-> If you observe `dpop_htu_mismatch`, standardize HTU in the script to match what the verifier reconstructs or implement a proxy-aware port-aware reconstruction in the verifier. For this PoC we standardize the test HTU.
-
-This is a known, documented PoC trade-off.
-
-### Expected results
-
-**An allowed request returns:**
-```json
-{ "allow": true }
-```
-
-**A denied request returns:**
-```json
-{ "allow": false, "reason": "<reason_code>" }
-```
-
-**Typical denial reasons include:**
-- `dpop_binding_mismatch`
-- `dpop_jti_mismatch`
-- `capability_violation`
-
----
+-   **No bypass of protected federated service:** `flower-server` is **not published to the host** (no `127.0.0.1:8081->8081/tcp`). It is reachable only on the internal Docker network; external callers must go through the Hub boundary.
+    
+-   **TLS SAN requirement (important):** The certificate presented by `verifier-proxy` must include a **Subject Alternative Name (SAN)** for the hostname used by clients (e.g., `verifier.local`, and any other in-network alias). Modern TLS stacks perform hostname verification against SAN entries (and do not rely on the certificate CN), so *Hub→Verifier* requests with strict verification succeed only when the target hostname matches a SAN, see RFC5280 and RFC9525.
 
 ## ✅ What the PoC Proves
 
 ### Boundary guarantees (what FCaC enforces)
 
 ✅ **Proof-carrying admission**: Every admitted operation presents cryptographic proof of origin, permission, and possession
-
 ✅ **Stateless verifier on the request path**: Admission is a pure verification step relying on trust anchors and token claims; no centralized mutable policy evaluation is required at runtime
-
 ✅ **Envelope-bound workflow trigger**: Once quorum/KYO completes, envelope issuance triggers operational actions (here: training), producing auditable evidence
 
 ### What FCaC does NOT attempt to solve here
 
 ❌ Full procedural governance (ABAC engines, organizational policies, human workflows) beyond a minimal KYO gate
-
 ❌ Production-grade orchestration and lifecycle management (explicit unbind endpoints, multi-backend reconciliation, robust retries)
-
 ❌ Model persistence as a secured artifact (planned enhancement)
 
 ---
@@ -339,24 +210,11 @@ This is a known, documented PoC trade-off.
 | **"curl/jq not found" inside a container** | Use a container that has tooling (hub) or query from host |
 
 ---
-
 ## 🚀 Next Enhancements
 
 - [ ] Persist model checkpoints under `vault/<envelope_id>/...` (separate track; not required for the core FCaC evidence story)
 - [ ] Add a minimal frontend for `/predict`, gated by `/admission/check`
 - [ ] Add a backend "unbind/reset" endpoint to avoid needing container restart between envelopes
-
----
-
-## 📝 Quickstart Checklist
-
-1. ✅ `tofu apply`
-2. ✅ `bash Test_createEnvelope_v3.sh` → obtain `envelope_id`
-3. ✅ Verify evidence under `verifier/vault/<envelope_id>/...`
-4. ✅ `bash run_probe_eddsa.sh` → ALLOW/DENY admission checks
-5. ✅ For a new training run:
-   - Create new envelope again
-   - Restart flower-server + clients if needed
 
 ---
 
@@ -368,9 +226,15 @@ Apache 2.0
 
 <div align="center">
 
-**Built by S*elf for demonstrating Federated Computing as Code**
+**Built by S*elf for demonstrating Federated Computing as Code @ Paris 2026**
 
 </div>
+
+
+ 
+
+
+ 
 
 
 

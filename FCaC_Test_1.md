@@ -1,166 +1,120 @@
-## From Test #1 to Flower training
+﻿
+## 🧪 Test #1 — Envelope creation (KYO) + operational trigger (Flower training)
 
-### Step 0 — What Test #1 really does
+>**Objective**: Envelope issuance triggers real, auditable execution (KYO → training → evidence).
 
-When running **Test #1 (envelope creation)**, we are _not_ requesting training.
-but   **creating a constitutional execution context** (i.e. the sovereignty envelope).
-
-This happens via:
-
--   `/verify-start` (KYO)
--   `/session/claim`
--   `/beta/bind/init`
--   `/beta/bind/approve`
-    
-
-At the end of this sequence, the envelope becomes **ACTIVE**.
-
-----------
-
-### Step 1 — Verifier emits an envelope-created event (this is the key)
-
-When the envelope becomes ACTIVE, the verifier executes this logic (simplified):
-
-```python 
-envelope_event = { "envelope_id": eid,
- "policy_hash": env["policy_hash"], 
- "scope": env["scope"], 
- "participants": [...], 
- "valid_until": ...
-}
-publish("fcac:envelopes:created", envelope_event)` 
-```
-
-**Important properties of this event:**
-
--   It is emitted **once**, at envelope activation.
--   It is **not a request**.
--   It is **not authorized**.
--   It is **constitutional**, not procedural.
-    
-This event says:
-> “An execution context with these constraints now exists.”
-
-----------
-
-### Step 2 — The Hub subscribes to envelope-created events
-
-The Hub runs a background subscriber:  
-```python 
-subscribe("fcac:envelopes:created")
-``` 
-
-When it receives the event, it decides **what operational workflows are implied by this envelope**.
-
-In the PoC, the rule is simple and explicit:
-```python 
-if scope.backend == "flower_server", then bind the Flower server
-```    
-This decision is **procedural**, local to the Hub, and **not** a governance decision.
-
-----------
-
-### Step 3 — Hub binds the Flower server to the envelope
-
-The Hub calls the Flower server control plane:
-
-```http 
- POST /bind_envelope {
-  "envelope_id": "...",
-  "policy_hash": "...",
-  "scope": {...}
-}```
-```
-Thus instead of **authorization** we get **context injection**:
-
-The Flower server:
--   records the envelope_id
--   records the policy_hash
--   unblocks its execution latch
-
-If the server is already bound, it returns `409` (which is why restarting the server is currently the reset mechanism).
-
-----------
-
-### Step 4 — Flower server starts training automatically
-
-Inside the Flower server, the main thread looks like:
-
-```python
-start_fastapi_control_plane()
-wait_until_envelope_bound()
-start_flower_training()` 
-```
-
-So training starts **because**:
-
--   the envelope exists
--   the Hub bound the server
--   the latch is released
-    
-
-There is **no runtime authorization check** in the server.
-
-This is the **correct FCaC architecture vision**.
-
-----------
-
-## What does _not_ happen anymore
-
-### ❌ No authorization needed inside the Flower server
-
-In a previous  versions, the logic was:
-
--   “check token”
--   “check permissions
--   “check requester”
-    
-That was wrong because it:
-
--   mixed constitutional governance with procedural execution
--   turned the server into a policy enforcement point (IAM smell)
-    
-
-Now:
-
--   the server **assumes** it is allowed to run
--   because it was bound to an envelope
--   and that binding was only possible after governance succeeded
-    
-
-----------
-
-### ❌ No training request passes through `/admission/check`
-
-Training is **not** an admitted request.
-
-Admission (`/admission/check`) is for:
-
--   operational API calls
--   prediction requests
--   data access
--   runtime actions initiated by agents
-
-Training is a **workflow implied by envelope existence**, not a request.
-
-----------
-## Summary
+Flower training starts **because envelope creation emits a constitutional event**, not because a training request is authorized. When an envelope transitions to `ACTIVE`, the verifier publishes an _envelope-created event_ on a shared event bus. The Hub subscribes to this event and binds the Flower server to the envelope context. The Flower server, once bound, starts training automatically. No authorization logic exists inside the Flower server; admission and authorization are completed **before** the workflow starts.
 
 > **Why training starts automatically after envelope creation.**  
-> In FCaC, an envelope is not a permission but a constitutional execution context. When an envelope becomes ACTIVE, the verifier emits a single envelope-created event that signals the existence of a new, governance-approved context. The Hub subscribes to this event and binds the relevant Core services to the envelope. In the PoC, this binding unblocks the Flower server, which starts federated training automatically. No authorization logic exists inside the training service itself: all governance decisions are completed prior to execution. This separation ensures that operational services remain purely procedural, while sovereignty constraints are enforced exclusively at the boundary.
+In FCaC, an envelope is not a permission but a constitutional execution context. When an envelope becomes ACTIVE, the verifier emits a single envelope-created event that signals the existence of a new, governance-approved context. The Hub subscribes to this event and binds the relevant Core services to the envelope. In the PoC, this binding unblocks the Flower server, which starts federated training automatically. No authorization logic exists inside the training service itself: all governance decisions are completed prior to execution. This separation ensures that operational services remain purely procedural, while sovereignty constraints are enforced exclusively at the boundary.
 
-> **Envelope binding and workflow execution.**  
-FCaC does not prescribe operational behavior. It establishes the conditions under which a service may enter a governed execution context. In the proof-of-concept, the Flower server is configured to interpret envelope binding as authorization to execute a predefined federated learning workflow. This behavior is analogous to a ***smart contract***: the envelope constitutes the enabling condition, while the training logic remains procedural, local to the service, and agreed independently of governance. Other services could interpret the same envelope differently or take no action at all.
+### Step 1: Start verification session (KYO)
 
-> **Client lifecycle.**  
-In the proof-of-concept, Flower clients are modeled as short-lived participants rather than persistent services. Each client joins a federated execution, participates for the agreed number of rounds, and then exits. This reflects realistic cross-silo settings in which organizations explicitly opt into each governed execution. As a result, running a new envelope requires restarting the client containers, ensuring fresh consent and preventing state leakage across envelopes.
-----------
+Admins initiate `/verify-start` and receives a 6-digit code using the command
+```bash
+./simulatePhone.sh
+```
+The script actually call 
+```bash
+curl -s \
+  --cacert vfp-governance/verifier/certs/ca.crt \
+  --cert   vfp-governance/verifier/vault/HospitalA-admin.crt \
+  --key    vfp-governance/verifier/vault/HospitalA-admin.key \
+  https://verifier.local:8443/verify-start
+```
+> It is also possible to load the hospital certificates on an Android device and  trigger the `verify-start` API endpoint.
 
-## Conclusion
+### Step 2: Claim session (Hub)
 
-This pattern is powerful because it scales:
+Hub claims the code and obtains a session handle.
 
--   You can trigger **multiple workflows** from the same envelope.
--   You can have **different hubs** react differently to the same envelope.
--   You can audit _why_ a workflow existed by pointing to the envelope.
--   You can prove that **no execution occurred without governance**.
+The envelope creation script (`Test_createEnvelope_v3.sh`) automates this flow:
+- `/beta/bind/init`
+- `/verify-start` (admin KYO)
+- `/session/claim` (hub)
+- `/beta/bind/approve` (hub)
+
+**Run:**
+
+```bash
+cd tests
+./Test1A_createEnvelope.sh
+```
+
+**Expected output includes:**
+```
+✓ Envelope created: b51d3869-4a95-40d5-bea8-064ecd813693
+Run post-envelope test:
+./Test1B_postEnvelope.sh b51d3869-4a95-40d5-bea8-064ecd813693
+```
+verifier-app publishes a Redis event on `fcac:envelopes:created`
+
+### Step 3: post-Envelope test
+
+Once the envelope has been created the Flower services registered with the hub can start. Training evidence is written by the Flower server side under the vault path for that envelope.
+
+> **Client retry and “completion” logs.** Flower clients start as short-lived jobs and attempt to connect to the Flower server for up to `MAX_RETRIES × RETRY_INTERVAL` (~10 minutes). Early “connection failed” messages are expected if the server is not yet bound/ready. When `start_numpy_client()` returns, the client prints a completion line and exits; this indicates that the client session ended without raising, not a formal proof of training. The authoritative success signals are the Flower server run summary and the persisted evidence file `/vault/<envelope_id>/run.json`.
+
+### Run the post-envelope script
+```
+./Test1B_postEnvelope.sh <envelope_id>
+<envelope_id> is the ACTIVE envelope
+```
+ 
+the script checks that the Post-Envelope Flow Test (Hub → bind → Flower run evidence) is valid for the ACTIVE envelope:
+ 
+e.g. Envelope ID: b51d3869-4a95-40d5-bea8-064ecd813693
+ 
+- Step 0: Preflight container liveness
+- Step 1: Verify Hub received envelope event
+- Step 2: Verify Hub bound (or attempted to bind) flower_server
+- Step 3: Verify flower-server references this envelope
+- Step 4: Wait for training completion (authoritative: /status)
+{"status":"bound","envelope_id":"b51d3869-4a95-40d5-bea8-064ecd813693","bound":true,"training":{"rounds":1,"loss":0.9048528075218201,"accuracy":0.7715,"started_at":1769523792.7784934,"ended_at":null,"status":"training","error":null}}
+ ... 
+ {"status":"bound","envelope_id":"b51d3869-4a95-40d5-bea8-064ecd813693","bound":true,"training":{"rounds":10,"loss":0.15646830201148987,"accuracy":0.952,"started_at":1769523792.7784934,"ended_at":1769523968.8421922,"status":"done","error":null}}
+✓ Training completed (per /status) 
+- Step 5: Verify evidence in /vault/<envelope_id>/run.json (inside flower-server)
+```python
+{
+  "envelope_id": "b51d3869-4a95-40d5-bea8-064ecd813693",
+  "fraction_evaluate": 1.0,
+  "fraction_fit": 1.0,
+  "min_available_clients": 2,
+  "num_rounds": 10,
+  "policy_hash": "sha256:e903476586378a81fb970c6863050e6428d5f458940dcf7a1eabd70c9476a329",
+  "scope": {
+    "backend": "flower_server",
+    "model": "FedMNIST-v1"
+  },
+  "training": {
+    "accuracy": 0.952,
+    "ended_at": 1769523968.8421922,
+    "error": null,
+    "loss": 0.15646830201148987,
+    "rounds": 10,
+    "started_at": 1769523792.7784934,
+    "status": "done"
+  }
+}
+```
+### 🔄 Operational workflow: rerun training for a new envelope
+
+Each envelope is treated as a bounded execution context. If you create a new envelope and want a new run, a minimal PoC reset is:
+
+```bash
+docker restart flower-server
+docker restart flower-client-even flower-client-odd
+```
+
+> 💡 **Why this is needed**: The flower-server control plane can refuse rebinding with 409 Conflict if it still considers itself bound to a previous envelope. Restarting the server resets that in-memory binding latch.
+
+### 🛠️ Debugging without curl/jq inside slim images
+
+Some containers do not have curl/jq. Use a container that does (e.g., hub) to query internal services:
+```bash
+docker exec -it fc-hub sh -lc 'curl -s http://flower-server:8081/status | python -m json.tool'
+```
+
+---
+

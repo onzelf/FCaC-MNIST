@@ -1,4 +1,4 @@
-# 🔐 Federated Computing as Code (FCaC)
+ # 🔐 Federated Computing as Code (FCaC)
 ## PoC — Proof-Carrying Admission + Envelope-Bound Operations
 
 
@@ -131,9 +131,9 @@ tofu apply -auto-approve
 This starts the docker network and containers (nginx proxy, verifier-app, redis, hub, flower components).
 
 
-|  IMAGE |  PORTS |       NAMES |
-|--------|--------|-------------|
-|    fcac/flower-client:local  |     |                                        flower-client-even |
+ |  IMAGE |  PORTS |       NAMES |
+ |-----------------|--------------|-------------|
+ |    fcac/flower-client:local  |     |                                        flower-client-even |
 |    fcac/frontend:local     |        127.0.0.1:8082->80/tcp   |            fcac-frontend |
 |    fcac/flower-client:local  |         |                                 flower-client-odd |
 |    fcac/flower-server:local  |          |          flower-server|
@@ -168,21 +168,33 @@ The UI submits `{who, envelope_id, cohort, digit}` to the boundary endpoint. The
 -   **Constitutional enforcement before execution:** `/admission/check` gates the service call.
 -   **Cryptographic integrity:** tampered ECT or wrong cohort yields denial (`Signature verification failed` / `capability_violation`).
 -   **No bypass:** `flower-server` is internal-only; external callers must go through the boundary.
+ ---
+### MNIST as a clinical surrogate.
+In this PoC, MNIST is used purely as a _stand-in_ for clinical imaging to keep the ML layer simple while exercising FCaC governance end-to-end. A “digit class” (0–9) represents a categorical clinical outcome or imaging label (e.g., a diagnostic class, a triage bucket, or an imaging-derived category). The intent is not realism of the dataset, but realism of the _governance surface_: who is allowed to run prediction, under what scope, and with what verifiable evidence.
+
+**Cohorts as governance scopes over label disclosure.**  
+The cohort field (e.g., `EVEN_ONLY`, `ODD_ONLY`, `ODD_PLUS`) represents a governance-defined scope that restricts which classes may be produced/disclosed by a prediction service. Concretely, each cohort maps to an allowed set of classes (digits). This models a common clinical pattern: a given organization or role may be permitted to obtain only a restricted subset of outcomes (approved indications, protocol-scoped labels, jurisdictional restrictions, etc.) even if the computation infrastructure is shared.
+
+**Two-layer enforcement: constitutional admission + procedural masking.**  
+The PoC demonstrates enforcement at two distinct layers:
+
+1.  **Constitutional layer (admission control):** the Hub submits an operational manifest including `{resource, action, purpose, cohort, jti}` to `/admission/check`. The verifier admits or denies based on the ECT’s minted capabilities and policy scope. This is the FCaC “hard gate”: if denied, execution does not proceed.
+    
+2.  **Procedural layer (service-side restriction):** once admitted, the prediction service enforces the cohort restriction at inference time by constraining the model’s outputs to the cohort’s allowed class set (e.g., masking logits so disallowed classes cannot be returned). This ensures that even when prediction is allowed, the disclosed result remains within the permitted label-space.
     
 
-**Out of scope.**
+**Why this surrogate is meaningful.**  
+Although digits are artificial, the governance problem is real: in cross-silo settings, it is common to share a model or service while restricting _which results_ a given party may obtain. The MNIST/cohort mapping provides a minimal, inspectable way to demonstrate (i) cryptographically verifiable admission decisions, (ii) scope-carrying tokens (ECT + DPoP), and (iii) deterministic, auditable enforcement at the service boundary.
+
+---
+### Out of scope in this PoC.
 -   production-grade member IAM lifecycle (enrollment/revocation), strong end-user auth
 -   hardened wallet/key storage (attestation, secure enclaves for holder keys)
 -   prompt→request compilation (LLM UX) and safe projection to constitutional tuples
 -   production hardening (rate limits, monitoring, multi-tenant isolation)
+-  `envelope_id` is used by the service to select the persisted model artifact, but it is not yet part of the minting/admission tuple.
 
 ---
-## Important Security note
-
--   **No bypass of protected federated service:** `flower-server` is **not published to the host** (no `127.0.0.1:8081->8081/tcp`). It is reachable only on the internal Docker network; external callers must go through the Hub boundary.
-    
--   **TLS SAN requirement (important):** The certificate presented by `verifier-proxy` must include a **Subject Alternative Name (SAN)** for the hostname used by clients (e.g., `verifier.local`, and any other in-network alias). Modern TLS stacks perform hostname verification against SAN entries (and do not rely on the certificate CN), so *Hub→Verifier* requests with strict verification succeed only when the target hostname matches a SAN, see RFC5280 and RFC9525.
-
 ## ✅ What the PoC Proves
 
 ### Boundary guarantees (what FCaC enforces)
@@ -232,13 +244,3 @@ Apache 2.0
 
 
  
-
-
- 
-
-
-
- 
-
-
-

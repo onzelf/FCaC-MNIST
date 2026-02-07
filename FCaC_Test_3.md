@@ -1,4 +1,4 @@
-﻿## 🧪  Test #3 — MNIST “clinical imaging” prediction with FCaC admission
+﻿ ## 🧪  Test #3 — MNIST “clinical imaging” prediction with FCaC admission
 
  Test #3 extends the PoC from “admission only” (Test #2) to **admission + guarded inference**. MNIST digits are treated as a stand-in for **clinical imaging resources (PET-CT)**, and cohorts (`EVEN_ONLY`, `ODD_ONLY`, `ODD_PLUS`) act like regulated “patient groups / study strata” to demonstrate scope enforcement.
  
@@ -41,7 +41,7 @@ This script is kept as a **non-UI** deterministic regression check (mint → pre
 ## Important security notes
 -  **No bypass of protected federated service:**  `flower-server` is **not published to the host** (no `127.0.0.1:8081->8081/tcp`). It is reachable only on the internal Docker network; external callers must go through the Hub boundary.
 
--  **TLS SAN requirement:** Hub→Verifier TLS verification requires the verifier-proxy server certificate to include a **SubjectAltName (SAN)** for the hostname used (e.g., `DNS:verifier.local`). CN-only certificates are rejected by strict TLS clients.
+- **TLS SAN requirement (important):** The certificate presented by `verifier-proxy` must include a **Subject Alternative Name (SAN)** for the hostname used by clients (e.g., `verifier.local`, and any other in-network alias). Modern TLS stacks perform hostname verification against SAN entries (and do not rely on the certificate CN), so *Hub→Verifier* requests with strict verification succeed only when the target hostname matches a SAN, see RFC5280 and RFC9525.
 
 Quick check (should print nothing):
 

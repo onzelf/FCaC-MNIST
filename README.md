@@ -59,7 +59,7 @@ This repository contains a working **Proof-of-Concept (PoC)** for **Federated Co
 └─────────────────────────────────────────────────────────────┘
 ```
 
-![enter image description here](FCAC_v6.png)
+![enter image description here](FCAC_v6.png width="75%")
 
 ---
 
@@ -199,15 +199,15 @@ Although digits are artificial, the governance problem is real: in cross-silo se
 
 ### Boundary guarantees (what FCaC enforces)
 
-✅ **Proof-carrying admission**: Every admitted operation presents cryptographic proof of origin, permission, and possession
-✅ **Stateless verifier on the request path**: Admission is a pure verification step relying on trust anchors and token claims; no centralized mutable policy evaluation is required at runtime
-✅ **Envelope-bound workflow trigger**: Once quorum/KYO completes, envelope issuance triggers operational actions (here: training), producing auditable evidence
+- ✅ **Proof-carrying admission**: Every admitted operation presents cryptographic proof of origin, permission, and possession
+- ✅ **Stateless verifier on the request path**: Admission is a pure verification step relying on trust anchors and token claims; no centralized mutable policy evaluation is required at runtime
+- ✅ **Envelope-bound workflow trigger**: Once quorum/KYO completes, envelope issuance triggers operational actions (here: training), producing auditable evidence
 
 ### What FCaC does NOT attempt to solve here
 
-❌ Full procedural governance (ABAC engines, organizational policies, human workflows) beyond a minimal KYO gate
-❌ Production-grade orchestration and lifecycle management (explicit unbind endpoints, multi-backend reconciliation, robust retries)
-❌ Model persistence as a secured artifact (planned enhancement)
+- ❌ Full procedural governance (ABAC engines, organizational policies, human workflows) beyond a minimal KYO gate
+- ❌ Production-grade orchestration and lifecycle management (explicit unbind endpoints, multi-backend reconciliation, robust retries)
+- ❌ Model persistence as a secured artifact (planned enhancement)
 
 ---
 

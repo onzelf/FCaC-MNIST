@@ -59,7 +59,7 @@ This repository contains a working **Proof-of-Concept (PoC)** for **Federated Co
 └─────────────────────────────────────────────────────────────┘
 ```
 
-![enter image description here](FCAC_v6.png width="75%")
+<img src="FCAC_v6.png" width="75%">
 
 ---
 

@@ -28,13 +28,13 @@ variable "mtls_port" {
 variable "flower_rounds" {
   description = "Number of FL rounds"
   type        = number
-  default     = 3
+  default     = 10
 }
 
 variable "local_epochs" {
   description = "Local epochs per client"
   type        = number
-  default     = 1
+  default     = 5
 }
 
 variable "learning_rate" {
@@ -84,7 +84,7 @@ resource "docker_image" "verifier_app" {
   build {
     context    = "${local.repo_root}/vfp-governance/gatekeeper"
     dockerfile = "${local.repo_root}/vfp-governance/gatekeeper/Dockerfile"
-    no_cache   = true
+    no_cache   = false
   }
   keep_locally = true
 }
@@ -150,7 +150,10 @@ resource "docker_container" "verifier_proxy" {
   name  = "verifier-proxy"
   image = docker_image.verifier_proxy.name
 
-  networks_advanced { name = docker_network.fc.name }
+  networks_advanced { 
+     name = docker_network.fc.name 
+     aliases = ["verifier.local"]  
+  }
 
   ports {
     internal = 8443
@@ -171,6 +174,98 @@ resource "docker_container" "verifier_proxy" {
 }
 
 
+# -------------------------------------------------------------------
+#  Issuer container + 2 clients
+# -------------------------------------------------------------------
+resource "docker_image" "issuer" {
+  name = "fcac/issuer:local"
+  build {
+    context    = "${local.repo_root}/vfp-core/issuers"
+    dockerfile = "${local.repo_root}/vfp-core/issuers/Dockerfile"
+    no_cache   = false
+  }
+}
+
+
+resource "docker_container" "issuer_hospitala" {
+  name  = "issuer-hospitala"
+  image = docker_image.issuer.name
+
+  networks_advanced { name = docker_network.fc.name }
+
+  env = [
+    "ORG=org://HospitalA",
+    "VERIFIER_URL=https://verifier-proxy:8443",
+    "CA_CRT=/run/certs/ca.crt",
+    "VERIFY_TLS=1",
+    "ADMIN_CRT=/run/certs/admin.crt",
+    "ADMIN_KEY=/run/certs/admin.key"
+  ]
+
+
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/ca.crt")
+    container_path = "/run/certs/ca.crt"
+    read_only      = true
+  }
+
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/HospitalA-admin.crt")
+    container_path = "/run/certs/admin.crt"
+    read_only      = true
+  }
+
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/HospitalA-admin.key")
+    container_path = "/run/certs/admin.key"
+    read_only      = true
+  }
+
+  depends_on = [docker_container.verifier_proxy]
+  must_run   = true
+  restart    = "unless-stopped"
+}
+
+resource "docker_container" "issuer_hospitalb" {
+  name  = "issuer-hospitalb"
+  image = docker_image.issuer.name
+
+  networks_advanced { name = docker_network.fc.name }
+
+  env = [
+    "ORG=org://HospitalB",
+    "VERIFIER_URL=https://verifier-proxy:8443",
+    "CA_CRT=/run/certs/ca.crt",
+    "VERIFY_TLS=1",
+    "ADMIN_CRT=/run/certs/admin.crt",
+    "ADMIN_KEY=/run/certs/admin.key"
+  ]
+
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/ca.crt")
+    container_path = "/run/certs/ca.crt"
+    read_only      = true
+  }
+
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/HospitalB-admin.crt")
+    container_path = "/run/certs/admin.crt"
+    read_only      = true
+  }
+
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/HospitalB-admin.key")
+    container_path = "/run/certs/admin.key"
+    read_only      = true
+  }
+
+  depends_on = [docker_container.verifier_proxy]
+  must_run   = true
+  restart    = "unless-stopped"
+}
+
+
+
 
 # -------------------------------------------------------------------
 # Hub (coordination orchestrator)
@@ -180,7 +275,7 @@ resource "docker_image" "hub" {
   build {
     context    = "${local.repo_root}/vfp-core/hub" 
     dockerfile = "${local.repo_root}/vfp-core/hub/Dockerfile"
-    no_cache   = true
+    no_cache   = false
   }
   keep_locally = true
 }
@@ -200,13 +295,19 @@ resource "docker_container" "hub" {
 
   env = [
     "REDIS_URL=redis://redis:6379",
-    "VERIFIER_URL=https://verifier-proxy:8443",
-    "VERIFY_TLS=0",
+    #"VERIFY_TLS=0",
     "HUB_CERT_CRT=/run/certs/hub.crt",
     "HUB_CERT_KEY=/run/certs/hub.key",
+    "VERIFIER_URL=https://verifier.local:8443",
   ]
 
 
+  volumes {
+    host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/ca.crt")
+    container_path = "/run/certs/ca.crt"
+    read_only      = true
+  }
+ 
  volumes {
     host_path      = abspath("${local.repo_root}/vfp-governance/verifier/certs/hub.crt")
     container_path = "/run/certs/hub.crt"
@@ -234,12 +335,15 @@ resource "docker_image" "frontend" {
   build {
     context    = "${local.repo_root}/vfp-core/frontend" 
     dockerfile = "${local.repo_root}/vfp-core/frontend/Dockerfile"
-    no_cache   = true
+    no_cache   = false
   }
 }
 
+
+
+
 resource "docker_container" "frontend_even" {
-  name  = "fcac-frontend-even"
+  name  = "fcac-frontend"
   image = docker_image.frontend.name
   
   networks_advanced { name = docker_network.fc.name }
@@ -249,21 +353,23 @@ resource "docker_container" "frontend_even" {
     external = 8082
     ip       = "127.0.0.1"
   }
-  
   env = [
-    "CLIENT_ID=client_even",
-    "FLOWER_SERVER=http://flower-server:8081"
+    "HUB_URL=http://fc-hub:8080",
+    "ISSUER_A_URL=http://issuer-hospitala:8080",
+    "ISSUER_B_URL=http://issuer-hospitalb:8080",
+    "DPoP_HTU=https://verifier.local/admission/check",
   ]
-  
-  depends_on = [docker_container.hub, docker_container.flower_server]
+
+  depends_on = [docker_container.hub, 
+                docker_container.verifier_proxy, 
+                docker_container.issuer_hospitala, 
+                docker_container.issuer_hospitalb]
+
   must_run   = true
   restart    = "unless-stopped"
 }
 
  
-
-
-
 # -------------------------------------------------------------------
 # Flower Backend (orchestrator) + 2 clients
 # -------------------------------------------------------------------
@@ -272,7 +378,7 @@ resource "docker_image" "flower_server" {
   build {
     context    = "${local.repo_root}/vfp-core/backend/flower_server" 
     dockerfile = "${local.repo_root}/vfp-core/backend/flower_server/Dockerfile"
-    no_cache   = true
+    no_cache   = false
   }
   keep_locally = true
 }
@@ -283,12 +389,12 @@ resource "docker_container" "flower_server" {
 
   networks_advanced { name = docker_network.fc.name }
 
-  # Expose HTTP API port for Hub coordination (and later predict; not used in Test#3A)
-  ports {
-    internal = 8081
-    external = 8081
-    ip       = "127.0.0.1"
-  }
+  # Expose HTTP API port for Hub coordination (and later predict)
+  #ports {
+  #  internal = 8081
+  #  external = 8081
+  #  ip       = "127.0.0.1"
+  #}
 
   env = [
     "REDIS_URL=redis://redis:6379",
@@ -393,10 +499,6 @@ output "client_odd_container" {
   value = docker_container.flower_client_odd.name
 }
 
-#output "verifier_url" {
-#  value       = "https://${var.lan_ip}:${var.verifier_port}"
-#  description = "mTLS Verifier endpoint for KYO/KYC + β/μ/ρ"
-#}
 
 output "mtls_base_url" {
   value       = "https://${var.lan_ip}:${var.mtls_port}"

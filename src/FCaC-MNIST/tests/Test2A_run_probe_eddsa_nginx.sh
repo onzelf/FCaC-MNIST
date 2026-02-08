@@ -4,16 +4,22 @@ set -euo pipefail
 # -------- Config --------
 PORT=${PORT:-8443}
 ISSUER="https://verifier.local:8443"
-LAN="192.168.1.25"
+
 CAC="../vfp-governance/verifier/certs/ca.crt"
 CRT="../vfp-governance/verifier/certs/hub.crt"
 KEY="../vfp-governance/verifier/certs/hub.key"
 
+# Org-admin mTLS material for /mint_ect (Test#2)
+MINT_CRT="${MINT_CRT:-../vfp-governance/verifier/certs/HospitalA-admin.crt}"
+MINT_KEY="${MINT_KEY:-../vfp-governance/verifier/certs/HospitalA-admin.key}"
+
 # Cap profiles to mint (must exist in policy.cap_profiles)
 CAP_PROFILES='["capset:trainer_A","capset:data_scientist"]'
+
 NBF="$(date -u -Iseconds -d '-60 seconds' | sed 's/+00:00/Z/')"
 EXP="$(date -u -Iseconds -d '+1 hour'     | sed 's/+00:00/Z/')"
 CURL_MTLS=( -s --cacert "$CAC" --cert "$CRT" --key "$KEY" )
+CURL_MTLS_MINT=( -s --cacert "$CAC" --cert "$MINT_CRT" --key "$MINT_KEY" )
 
 # -------- Generate holder keys --------
 echo "== 1) Generate holder keys =="
@@ -21,7 +27,7 @@ python3 gen_member_keys.py --who Martinez | sed 's/^/[keys] /' || true
 PUB_B64=$(cat holder_keys/Martinez.pubb64)
 PRIV_HEX=$(cat holder_keys/Martinez.privhex)
 
-# Wait for /health
+echo "== 2)  Wait for /health =="
 for i in {1..30}; do
   sleep 0.3
   echo -n "."
@@ -31,7 +37,7 @@ echo "[issuer $i] $(curl "${CURL_MTLS[@]}" ${ISSUER}/health)"
 
 # -------- Mint ECT --------
 echo "== 3) Mint ECT =="
-ECT_RESP=$(curl "${CURL_MTLS[@]}" -X POST "${ISSUER}/mint_ect" \
+ECT_RESP=$(curl "${CURL_MTLS_MINT[@]}" -X POST "${ISSUER}/mint_ect" \
   -H 'content-type: application/json' \
   -d "$(jq -n --arg pub "$PUB_B64" --argjson profiles "${CAP_PROFILES}" --arg nbf "$NBF" --arg exp "$EXP" \
         '{holder_pub_b64:$pub, cap_profiles:$profiles, nbf:$nbf, exp:$exp}')")

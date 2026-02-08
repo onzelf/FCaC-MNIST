@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# test-create-envelope.sh - Complete envelope creation flow
+# Test1A_createEnvelope.sh - Complete envelope creation flow
 
 set -euo pipefail
 
-LAN="${LAN:-192.168.1.25}"
+#LAN="${LAN:-192.168.1.25}"
+LAN="verifier.local"
 CRT="../vfp-governance/verifier/certs/hub.crt"
 KEY="../vfp-governance/verifier/certs/hub.key"
 
@@ -68,4 +69,4 @@ echo ""
 echo "✓ Envelope created: $ENVELOPE_ID"
 echo ""
 echo "Run post-envelope test:"
-echo "./Test_post_envelope.sh $ENVELOPE_ID"
+echo "./Test1B_postEnvelope.sh $ENVELOPE_ID"

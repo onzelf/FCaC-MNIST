@@ -1,37 +1,50 @@
-# frontend/app.py - Simple FastAPI frontend
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import Optional
+from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-import requests
-import os
+from frontend_impl import RIGHTS_TEXT, ui_mint, ui_predict_with_ect
 
 app = FastAPI()
 
-CLIENT_ID = os.environ.get("CLIENT_ID")  # Set at deployment
-FLOWER_SERVER = os.environ.get("FLOWER_SERVER", "http://flower-server:8081")
-print(f"[FrontEnd] client ID {CLIENT_ID}  ")
+BASE = Path(__file__).resolve().parent
+STATIC = BASE / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 @app.get("/")
-async def index():
-    html = open("static/index.html").read()
-    return HTMLResponse(content=html.replace("{{CLIENT_ID}}", CLIENT_ID))
+def root():
+    return FileResponse(str(STATIC / "index.html"))
 
-@app.get("/api/predict/{digit}")
-async def predict_digit(digit: int):
-    try:
-        resp = requests.get(
-            f"{FLOWER_SERVER}/predict_image/{digit}",
-            params={"client_id": CLIENT_ID},
-            timeout=10
-        )
-        # Check status and return appropriate response
-        if resp.status_code == 403:
-            error_data = resp.json()
-            return {"error": error_data.get("detail", "Access denied"), "status": "denied"}
-        elif resp.status_code == 200:
-            return resp.json()
-        else:
-            return {"error": f"Unexpected status {resp.status_code}", "status": "error"}
-             
-    except Exception as ex:
-        return {"error": str(ex)} 
+@app.get("/index.html")
+def index_html():
+    return FileResponse(str(STATIC / "index.html"))
+
+@app.get("/rights", response_class=PlainTextResponse)
+def rights():
+    return RIGHTS_TEXT
+
+
+class MintReq(BaseModel):
+    who: str
+    cohort: str
+
+@app.post("/mint")
+def mint(req: MintReq):
+    return ui_mint(req)
+
+
+class PredictReq(BaseModel):
+    who: str
+    envelope_id: str
+    cohort: str
+    digit: int
+    topk: Optional[int] = 3
+    jti: str
+    ect: str  # REQUIRED: two-step protocol (mint then predict)
+
+
+@app.post("/predict")
+def predict(req: PredictReq):
+    return ui_predict_with_ect(req)

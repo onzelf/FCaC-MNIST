@@ -2,14 +2,11 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
-    flwr \
-    requests \
-    uvicorn \
-    fastapi \
-    redis
+ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch torchvision \
+    flwr requests uvicorn fastapi redis pydantic pillow
 
-COPY server.py .
+COPY server.py /app/server.py
 
 # Mount certs at runtime
 VOLUME ["/run/certs"]

@@ -8,17 +8,27 @@
 
 from __future__ import annotations
 
-import json
-import os, time, requests
+import json, random
+import numpy as np
+import os, time, requests, io, base64
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
+from uuid import UUID
 
 import flwr as fl
 from fastapi import FastAPI, HTTPException, Request
 import uvicorn
 from flwr.server.strategy import FedAvg
+from flwr.common import parameters_to_ndarrays
 
+from pydantic import BaseModel
+from torchvision.datasets import MNIST
+import torch
+import torch.nn as nn
+from PIL import Image
+import torchvision.transforms as T
+ 
 # ----------------------------
 # Configuration
 # ----------------------------
@@ -40,6 +50,19 @@ HUB_CERT: Tuple[str, str] = (
 )
 
 HUB_URL = os.environ.get("HUB_URL", "http://fc-hub:8080")
+
+_MNIST = None
+
+def sample_mnist_pil(d: int) -> Image.Image:
+    global _MNIST
+    if _MNIST is None:
+        _MNIST = MNIST("/tmp/mnist", train=False, download=True)
+    idx = [i for i, t in enumerate(_MNIST.targets) if int(t) == d]
+    if not idx:
+        raise HTTPException(500, f"mnist_no_samples_for_digit:{d}")
+    img, _ = _MNIST[random.choice(idx)]   # PIL image 28x28
+    return img.convert("L")
+
 
 def register_with_hub():
     payload = {"type": "flower_server", "url": "http://flower-server:8081"}
@@ -88,11 +111,104 @@ def persist_run_artifact(envelope_id: str, payload: Dict[str, Any]) -> Path:
     return path
 
 
+COHORT_TO_DIGITS = {
+    "EVEN_ONLY": [0,2,4,6,8],
+    "ODD_ONLY":  [1,3,5,7,9],
+    "ODD_PLUS":  [1,5,7,0,2],
+}
+
+#
+# Prediction support
+class PredictReq(BaseModel):
+    envelope_id: UUID
+    cohort: str
+    digit: Optional[int] = None
+    image_b64: Optional[str] = None
+    topk: Optional[int] = 3
+
+_transform = T.Compose([
+    T.Grayscale(num_output_channels=1),
+    T.Resize((28, 28)),
+    T.ToTensor(),
+    # MNIST normalization if your training used it:
+    #T.Normalize((0.1307,), (0.3081,))
+])
+
+
+def persist_model_state(envelope_id: str, ndarrays: List[np.ndarray]) -> str:
+    outdir = VAULT_ROOT / envelope_id
+    outdir.mkdir(parents=True, exist_ok=True)
+    path = outdir / "model.pth"
+
+    model = Net()
+    with torch.no_grad():
+        for p, arr in zip(model.parameters(), ndarrays):
+            p.copy_(torch.tensor(arr).reshape_as(p))
+
+    torch.save(model.state_dict(), path)
+    print(f"[flower_server:{now()}] persisted model: {path}", flush=True)
+    return str(path)
+
+
+def load_model(envelope_id: str):
+    model_path = f"/vault/{envelope_id}/model.pth"
+    print(f"[load_model] envelope_id={envelope_id!r} path={model_path}")
+
+    if not os.path.exists(model_path):
+        raise HTTPException(409, "model_not_ready")
+
+    model = Net()
+    state = torch.load(model_path, map_location="cpu")
+    model.load_state_dict(state, strict=True)
+    model.eval()
+    return model
+
+
+
+def mask_logits(logits: torch.Tensor, allowed: List[int]) -> torch.Tensor:
+    # logits: [1,10]
+    mask = torch.full_like(logits, float("-inf"))
+    for d in allowed:
+        if 0 <= d <= 9:
+            mask[0, d] = 0.0
+    return logits + mask
+
+
+
+#
+#-- Net definition
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seq = nn.Sequential(
+            nn.Conv2d(1, 32, 3, 1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, 1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Flatten(), nn.Linear(1600, 128), nn.ReLU(),
+            nn.Linear(128, 10)
+        )
+    def forward(self, x):
+        return self.seq(x)
+
+
 # ----------------------------
 # Flower strategy (captures metrics)
 # ----------------------------
 
 class MetricsFedAvg(FedAvg):
+    def aggregate_fit(self, server_round, results, failures):
+        agg_params, agg_metrics = super().aggregate_fit(server_round, results, failures)
+
+        # Persist final model at the end of training
+        try:
+            if agg_params is not None and envelope_config is not None:
+                if int(server_round) == int(NUM_ROUNDS):
+                    nds = parameters_to_ndarrays(agg_params)
+                    persist_model_state(envelope_config["envelope_id"], nds)
+        except Exception as e:
+            print(f"[flower_server:{now()}] WARN: model persist failed: {e}", flush=True)
+
+        return agg_params, agg_metrics 
+    
     def aggregate_evaluate(self, server_round, results, failures):
         # This hook runs after evaluation aggregation each round (if clients evaluate).
         # We record whatever we can as "run evidence" for Test #3.
@@ -189,13 +305,63 @@ async def bind_envelope(req: Request):
 
 
 @app.post("/predict_image")
-async def predict_image(_: Request):
-    """
-    Stub for Enhancement #3.
-    Prediction should be exposed via frontend and guarded by /admission/check,
-    not embedded here as an authorization surface.
-    """
-    raise HTTPException(501, "predict_not_enabled_in_test3")
+async def predict_image(req: PredictReq):
+
+    print(f"[predict_image] envelope_id={req.envelope_id!r} cohort={req.cohort!r} digit={req.digit!r}")
+
+    # ---- cohort → allowed digits (procedural constraint) ----
+    allowed = COHORT_TO_DIGITS.get(req.cohort)
+    if not allowed:
+        raise HTTPException(400, f"unknown_cohort:{req.cohort}")
+
+    # ---- choose image source: digit (preferred) OR image_b64 (fallback) ----
+    img: Image.Image
+
+    if req.digit is not None:
+        d = int(req.digit)
+        if d < 0 or d > 9:
+            raise HTTPException(400, f"bad_digit:{d}")
+
+        # "Fail immediately" if digit is not allowed for the cohort
+        if d not in allowed:
+            raise HTTPException(403, "digit_not_allowed_by_cohort")
+
+        # Sample a random MNIST image for that digit (backend-controlled)
+        img = sample_mnist_pil(d)  # returns PIL.Image in "L"
+
+    elif req.image_b64:
+        raw = base64.b64decode(req.image_b64)
+        img = Image.open(io.BytesIO(raw)).convert("L")
+
+    else:
+        raise HTTPException(400, "need_digit_or_image_b64")
+
+    # ---- load model (persisted under /vault/<envelope_id>/...) ----
+    model = load_model(req.envelope_id)
+
+    # ---- preprocess and infer ----
+    x = _transform(img).unsqueeze(0)  # [1,1,28,28]
+
+    with torch.no_grad():
+        logits = model(x)
+        logits = mask_logits(logits, allowed)          # enforce cohort on outputs
+        probs = torch.softmax(logits, dim=-1)[0]       # [10]
+
+    topk = max(1, min(int(req.topk or 3), 10))
+    vals, idxs = torch.topk(probs, k=topk)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    image_png_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    return {
+        "prediction": int(idxs[0].item()),
+        "topk": [{"digit": int(i.item()), "prob": float(v.item())} for v, i in zip(vals, idxs)],
+        "allowed_digits": allowed,
+        "image_png_b64": image_png_b64,
+        "requested_digit": int(req.digit) if req.digit is not None else None,
+    }
+
 
 
 def start_fastapi():

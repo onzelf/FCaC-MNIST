@@ -16,6 +16,9 @@ LR = float(os.getenv("LEARNING_RATE", "0.01"))
 MAX_RETRIES = 60  # 10 minutes with 10s intervals
 RETRY_INTERVAL = 10  # seconds
 
+def now() -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -84,21 +87,21 @@ class FlowerClient(fl.client.NumPyClient):
         return loss_sum / total, total, {"accuracy": correct / total}
 
 if __name__ == "__main__":
-    print(f"[{ROLE}] Attempting to connect to {SERVER}")
+    print(f"[{ROLE}:{now()}] Attempting to connect to {SERVER}")
     
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            print(f"[{ROLE}] Connection attempt {attempt}/{MAX_RETRIES}...")
+            print(f"[{ROLE}:{now()}] Connection attempt {attempt}/{MAX_RETRIES}...")
             fl.client.start_numpy_client(server_address=SERVER, client=FlowerClient())
-            print(f"[{ROLE}] Training completed successfully")
+            print(f"[{ROLE}] fl.client.start_numpy_client returned" )
             break
         except Exception as ex:
             if attempt < MAX_RETRIES:
-                print(f"[{ROLE}] Connection failed: {ex}")
+                print(f"[{ROLE}:{now()}] Connection failed: ({type(ex).__name__}): {ex}")
                 print(f"[{ROLE}] Retrying in {RETRY_INTERVAL} seconds...")
                 time.sleep(RETRY_INTERVAL)
             else:
-                print(f"[{ROLE}] Failed to connect after {MAX_RETRIES} attempts")
+                print(f"[{ROLE}:{now()}] Failed to connect after {MAX_RETRIES} attempts")
                 raise
 
-    print(f"[{ROLE}] break-away after attempt {attempt}")
+    print(f"[{ROLE}:{now()}] Exiting after attempt {attempt}")

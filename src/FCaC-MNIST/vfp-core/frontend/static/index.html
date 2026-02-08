@@ -1,99 +1,223 @@
-<!-- frontend/static/index.html -->
-<!DOCTYPE html>
+ <!doctype html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>FCaC Governed Prediction</title>
-    <style>
-        body {
-            font-family: system-ui, sans-serif;
-            max-width: 800px;
-            margin: 50px auto;
-            padding: 20px;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .digit-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 10px;
-            margin: 20px 0;
-        }
-        .digit-btn {
-            padding: 20px;
-            font-size: 24px;
-            border: 2px solid #4CAF50;
-            background: white;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-        .digit-btn:hover { background: #4CAF50; color: white; }
-        .result { margin-top: 20px; padding: 15px; border-radius: 4px; }
-        .error { background: #ffebee; color: #c62828; }
-        .success { background: #e8f5e9; color: #2e7d32; }
-    </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>FCaC MNIST Test#3</title>
+  <style>
+    body{font-family:system-ui;margin:0;background:#0b0f14;color:#e8eef7}
+    .wrap{max-width:1000px;margin:30px auto;padding:0 16px}
+    .card{background:#121925;border:1px solid #223047;border-radius:14px;padding:16px}
+    .tabs button{padding:10px 12px;border-radius:10px;border:1px solid #2b3b55;background:#0f1520;color:#e8eef7;cursor:pointer}
+    .tabs button.active{background:#1b2a44;border-color:#5a7bb6}
+    .digits{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px}
+    .digits button{padding:14px 0;border-radius:12px;border:1px solid #2b3b55;background:#0f1520;color:#e8eef7;font-size:18px;cursor:pointer}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
+    textarea,input{width:100%;box-sizing:border-box;background:#0f1520;color:#e8eef7;border:1px solid #2b3b55;border-radius:10px;padding:10px}
+    textarea{min-height:120px;font-family:ui-monospace,Menlo,monospace}
+    .out{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .imgbox{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;background:#0f1520;border:1px solid #2b3b55;border-radius:12px;min-height:260px;padding:12px}
+    img{image-rendering:pixelated;width:220px;height:220px}
+    pre{margin:0;white-space:pre-wrap;word-break:break-word}
+    .muted{color:#a9b6c8;font-size:13px}
+    .h3{margin:0 0 8px 0;font-size:16px}
+    .hide{display:none}
+    .btn{padding:10px 12px;border-radius:10px;border:1px solid #2b3b55;background:#0f1520;color:#e8eef7;cursor:pointer}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>FCaC Governed Prediction(2)</h1>
-        <p>Authenticated as: <strong id="clientId">Loading...</strong></p>
-        
-        <p>Select digit for prediction:</p>
-        <div class="digit-grid">
-            <button class="digit-btn" onclick="predict(0)">0</button>
-            <button class="digit-btn" onclick="predict(1)">1</button>
-            <button class="digit-btn" onclick="predict(2)">2</button>
-            <button class="digit-btn" onclick="predict(3)">3</button>
-            <button class="digit-btn" onclick="predict(4)">4</button>
-            <button class="digit-btn" onclick="predict(5)">5</button>
-            <button class="digit-btn" onclick="predict(6)">6</button>
-            <button class="digit-btn" onclick="predict(7)">7</button>
-            <button class="digit-btn" onclick="predict(8)">8</button>
-            <button class="digit-btn" onclick="predict(9)">9</button>
+  <div class="wrap">
+    <h2>FCaC MNIST — Test E2E (UI)</h2>
+
+    <div class="card">
+      <div class="row">
+        <div style="flex:1;min-width:260px">
+          <div class="muted">User</div>
+          <input id="who" value="Martinez"/>
         </div>
-        
-        <div id="result" class="result"></div>
+        <div style="flex:2;min-width:360px">
+          <div class="muted">Envelope ID</div>
+          <input id="envelopeId" placeholder="DEAD-BEEF"/>
+        </div>
+        <div style="width:120px">
+          <div class="muted">TopK</div>
+          <input id="topk" value="3"/>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div style="flex:1;min-width:360px">
+          <div class="muted">Reviewer note: rights</div>
+          <textarea id="rights" readonly>(loading /rights ...)</textarea>
+        </div>
+
+        <div style="flex:1;min-width:360px">
+          <div class="muted">Select cohort</div>
+          <div class="row tabs" id="cohortTabs" style="gap:10px">
+            <button data-cohort="EVEN_ONLY" class="active">EVEN_ONLY</button>
+            <button data-cohort="ODD_ONLY">ODD_ONLY</button>
+            <button data-cohort="ODD_PLUS">ODD_PLUS</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row tabs" id="roleTabs" style="gap:10px;margin-top:12px">
+        <button data-role="admin" class="active">Admin</button>
+        <button data-role="user">User</button>
+      </div>
+
+      <div class="muted" id="status" style="margin-top:10px;"></div>
+
+      <!-- ADMIN TAB -->
+      <div id="adminPane" style="margin-top:12px">
+        <div class="row">
+          <button class="btn" id="btnMint">Mint ECT</button>
+          <div class="muted" style="align-self:center">Mints an ECT for (user, cohort) via issuer /mint.</div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="muted">ECT (read-only)</div>
+          <textarea id="ectBox" readonly></textarea>
+        </div>
+      </div>
+
+      <!-- USER TAB -->
+      <div id="userPane" class="hide" style="margin-top:12px">
+        <div class="muted">Select digit</div>
+        <div class="digits" id="digits"></div>
+
+        <div class="out">
+          <div class="imgbox">
+            <div id="imgLabel" class="muted"></div>
+            <img id="mnistImg" alt=""/>
+          </div>
+          <div class="card" style="padding:12px;">
+            <div class="muted">Result</div>
+            <pre id="result"></pre>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
+
+<script>
+  const digitsEl = document.getElementById("digits");
+  const cohortTabs = document.getElementById("cohortTabs");
+  const roleTabs = document.getElementById("roleTabs");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const imgEl    = document.getElementById("mnistImg");
+  const imgLabelEl = document.getElementById("imgLabel");
+  const rightsEl = document.getElementById("rights");
+  const ectBox = document.getElementById("ectBox");
+
+  const adminPane = document.getElementById("adminPane");
+  const userPane  = document.getElementById("userPane");
+
+  let cohort = "EVEN_ONLY";
+
+  function jtiNow() { return "jti-ui-" + Math.floor(Date.now()/1000); }
+
+  cohortTabs.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      cohort = btn.dataset.cohort;
+      cohortTabs.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+    };
+  });
+
+  roleTabs.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      roleTabs.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      const role = btn.dataset.role;
+      if (role === "admin") { adminPane.classList.remove("hide"); userPane.classList.add("hide"); }
+      else { userPane.classList.remove("hide"); adminPane.classList.add("hide"); }
+    };
+  });
+
+  async function loadRights() {
+    try {
+      const r = await fetch("/rights");
+      rightsEl.value = await r.text();
+    } catch (e) {
+      rightsEl.value = "failed to load /rights: " + e;
+    }
+  }
+  loadRights();
+
+  // Digits 0..9
+  for (let d=0; d<=9; d++) {
+    const b = document.createElement("button");
+    b.textContent = String(d);
+    b.onclick = () => predict(d);
+    digitsEl.appendChild(b);
+  }
+
+  document.getElementById("btnMint").onclick = async () => {
+    statusEl.textContent = "Minting ECT ...";
+    const who = document.getElementById("who").value.trim();
+
+    const r = await fetch("/mint", {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+          who: document.getElementById("who").value.trim(),
+          cohort: cohort })
+    });
+
+    const txt = await r.text();
+    let j; try { j = JSON.parse(txt); } catch { j = {raw: txt}; }
     
-    <script>
-        // Client identity is determined by backend authentication
-        async function predict(digit) {
-            const resultDiv = document.getElementById('result');
-            resultDiv.className = 'result';
-            resultDiv.innerHTML = `Requesting prediction for digit ${digit}...`;
-            
-            try {
-                const response = await fetch(`/api/predict/${digit}`);
-                const data = await response.json();
-                
-                // Check for error or denied status
-                if (data.error || data.status === "denied") {
-                    resultDiv.className = 'result error';
-                    resultDiv.innerHTML = `
-                        <strong>✗ Prediction Denied</strong><br>
-                        ${data.error || 'Access not authorized'}
-                    `;
-                } else if (data.authorized) {
-                    resultDiv.className = 'result success';
-                    resultDiv.innerHTML = `
-                        <strong>✓ Prediction Authorized</strong><br>
-                        Client: ${data.client}<br>
-                        Digit: ${data.digit}<br>
-                        Envelope: ${data.envelope_id}
-                    `;
-                } else {
-                    resultDiv.className = 'result error';
-                    resultDiv.innerHTML = `<strong>Unexpected response</strong>`;
-                }
-            } catch (error) {
-                resultDiv.className = 'result error';
-                resultDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
-            }
-        }  
-    </script>
+    //console.log("mint response:", j);
+    //alert("mint oook=" + j.ok);
+
+    if (!j.ok) {
+      statusEl.textContent = `Mint failed: ${j.reason || "unknown"}`;
+      ectBox.value = "";
+      return;
+    }
+    ectBox.value = j.ect || "";
+    statusEl.textContent = "Mint OK";
+  };
+
+  async function predict(digit) {
+    statusEl.textContent = "Calling /predict ...";
+    resultEl.textContent = "";
+    imgEl.removeAttribute("src");
+    imgLabelEl.textContent = `COHORT ${cohort}`;
+
+    const who = document.getElementById("who").value.trim();
+    const envelope_id = document.getElementById("envelopeId").value.trim();
+    if (!envelope_id) { statusEl.textContent = "Envelope ID is required."; return; }
+
+    const ect = ectBox.value.trim();
+    if (!ect) { statusEl.textContent = "Missing ECT. Go to Admin tab and mint first."; return; }
+
+    const topk = parseInt(document.getElementById("topk").value || "3", 10);
+
+    const body = { who, envelope_id, cohort, digit, topk, jti: jtiNow(), ect };
+    if (!envelope_id) { statusEl.textContent = "Envelope ID is required."; return; }
+
+    const r = await fetch("/predict", {
+      method:"POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+
+    const txt = await r.text();
+    let json; try { json = JSON.parse(txt); } catch { json = {raw: txt}; }
+
+    statusEl.textContent = `HTTP ${r.status} — executed=${json.executed}`;
+    resultEl.textContent = JSON.stringify(json, null, 2);
+
+    const pred = (json.prediction || {});
+    if (pred.image_png_b64) {
+      imgEl.src = "data:image/png;base64," + pred.image_png_b64;
+    } else {
+      imgEl.removeAttribute("src");
+    }
+  }
+</script>
 </body>
 </html>
+ 

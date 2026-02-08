@@ -1,5 +1,5 @@
 # hub/hub.py - Hub as coordination orchestrator
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Header
 import redis.asyncio as redis
 import asyncio
 import json
@@ -7,6 +7,9 @@ import os
 import requests
 import uvicorn
 import time
+from pydantic import BaseModel, Field
+from typing import Optional
+ 
 
 app = FastAPI()
 
@@ -14,6 +17,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 # Registry of available backends
 BACKEND_REGISTRY = {}  # backend_type -> {"url": str, "registered_at": int}
+ 
 
 redis_client = None
 
@@ -93,6 +97,74 @@ async def subscribe_to_envelope_events():
             await pubsub.close()
         except Exception:
             pass
+
+
+class PredictReq(BaseModel):
+    envelope_id: str
+    cohort: str
+    digit: int = Field(ge=0, le=9)
+    topk: Optional[int] = 3
+    jti: str
+
+@app.post("/predict")
+def predict(
+    req: PredictReq,
+    authorization: str = Header(..., alias="Authorization"),
+    dpop: str = Header(..., alias="DPoP"),
+    dpop_nonce: str = Header(..., alias="X-DPoP-Nonce"),
+):
+    # 1) constitutional tuple for admission (policy match)
+    manifest = {
+        "resource": "PET-CT",
+        "action": "read",
+        "purpose": "model_prediction",
+        "cohort": req.cohort,
+        "jti": req.jti,
+    }
+
+    verifier_base = os.getenv("VERIFIER_URL", "https://verifier.local:8443").rstrip("/")
+    verifier_check = verifier_base + "/admission/check"
+
+    ca_crt  = os.getenv("FCAC_CA_CRT",  "/run/certs/ca.crt")
+    hub_crt = os.getenv("FCAC_HUB_CRT", "/run/certs/hub.crt")
+    hub_key = os.getenv("FCAC_HUB_KEY", "/run/certs/hub.key")
+
+    try:
+        vr = requests.post(
+            verifier_check,
+            headers={
+                "Authorization": authorization,  # "ECT <jws>"
+                "DPoP": dpop,
+                "X-DPoP-Nonce": dpop_nonce,
+                "Content-Type": "application/json",
+            },
+            json=manifest,
+            timeout=15,
+            verify=ca_crt,
+            cert=(hub_crt, hub_key),
+        )
+        probe = vr.json()
+    except Exception as e:
+        raise HTTPException(502, f"verifier_error:{e}")
+
+    if not probe.get("allow", False):
+        return {"admission": probe, "executed": False}
+
+    # 2) forward to federated service (internal-only)
+    flower_base = os.getenv("FLOWER_URL", "http://flower-server:8081").rstrip("/")
+    pr = requests.post(
+        flower_base + "/predict_image",
+        json={
+            "envelope_id": req.envelope_id,
+            "cohort": req.cohort,
+            "digit": req.digit,
+            "topk": req.topk,
+        },
+        timeout=30,
+    )
+    return {"admission": probe, "executed": True, "prediction": pr.json()}
+
+
 
 async def handle_envelope_created(envelope: dict):
     """

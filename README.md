@@ -151,11 +151,11 @@ This starts the docker network and containers (nginx proxy, verifier-app, redis,
 --- 
 ## Unitary Tests
 
-### 🧪 Test #1 — Envelope creation (KYO) + operational trigger (Flower training) [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/FCaC_Test_1.md)
+### 🧪 Test #1 — Envelope creation (KYO) + operational trigger (Flower training) [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/docs/FCaC_Test_1.md)
 
-### 🧪 Test #2 — Stateless Admission with ECT + DPoP [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/FCaC_Test_2.md)
+### 🧪 Test #2 — Stateless Admission with ECT + DPoP [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/docs/FCaC_Test_2.md)
 
-### 🧪 Test #3 — MNIST “clinical imaging” prediction with FCaC admission [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/FCaC_Test_3.md)
+### 🧪 Test #3 — MNIST “clinical imaging” prediction with FCaC admission [ see here](https://github.com/onzelf/FCaC-MNIST/blob/main/docs/FCaC_Test_3.md)
 
 
 ## E2E   — UI demonstrator (Admin mint → User governed predict)

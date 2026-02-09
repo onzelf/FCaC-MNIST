@@ -59,7 +59,7 @@ This repository contains a working **Proof-of-Concept (PoC)** for **Federated Co
 └─────────────────────────────────────────────────────────────┘
 ```
 
-<img src="FCAC_v6.png" width="75%">
+<img src="docs/FCAC_v6.png" width="75%">
 
 ---
 
@@ -160,7 +160,7 @@ This starts the docker network and containers (nginx proxy, verifier-app, redis,
 
 ## E2E   — UI demonstrator (Admin mint → User governed predict)
 
-E2E adds a minimal web UI that drives the same governed execution path as the CLI tests, but with a user friedly interface ![ ](E2E_UI.png)
+E2E adds a minimal web UI that drives the same governed execution path as the CLI tests, but with a user friedly interface ![ ](docs/E2E_UI.png)
 
 ### Preconditions
 This E2E test assumes you already have:

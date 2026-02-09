@@ -68,25 +68,30 @@ This repository contains a working **Proof-of-Concept (PoC)** for **Federated Co
 Key directories and their purpose:
 
 ```
-infra-tofu
-└── Terraform configuration file (HCL)
-
-vfp-core
-
-vfp-governance/verifier/state/
-├── Runtime state mounted into verifier-app
-└── (policy, binds, envelopes, etc.)
-
-vfp-governance/verifier/certs/
-├── TLS/mTLS certificates
-└── (server cert, CA, client certs)
-
-vfp-governance/verifier/vault/
-├── "Secure enclave simulation"
-└── Training writes run evidence here
-
-tests/
-└── Test suites (shell and helper python scripts)
+└── src
+    ├── infra
+    │   └── tofu  Terraform main configuration file (HCL)
+    ├── tests -> Test suites
+    ├── vfp-core
+    │   ├── backend
+    │   │   ├── flower_client
+    │   │   └── flower_server
+    │   ├── frontend
+    │   │   └── static -> HTTP web app
+    │   ├── hub  -> system coordinator
+    │   └── issuers  -> identity issuers
+    └── vfp-governance
+        ├── gatekeeper   
+        └── verifier
+            ├── binds
+            ├── certs  -> TLS/mTLS certificates
+            ├── nginx  -> nginx proxy configuration
+            ├── state  -> Runtime state mounted into verifier-app
+            │   ├── binds
+            │   ├── envelopes
+            │   ├── events
+            │   └── keys
+            └── vault -> Secure enclave simulation
 ```
 
 ---

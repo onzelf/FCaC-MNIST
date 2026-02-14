@@ -12,7 +12,8 @@ rm -v -f *.key *.crt *.csr *.p12 *.srl 2>/dev/null || true
 # --------------------------------------------
 # Parameters
 # --------------------------------------------
-PARAM=${1,,}
+PARAM=${1:-false}
+PARAM=${PARAM,,}
                          
 DAYS_CA=3650
 DAYS_LEAF=825
